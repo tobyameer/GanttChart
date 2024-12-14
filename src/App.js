@@ -19,6 +19,7 @@ const calculateFCFS = (processes) => {
 
   processes.sort((a, b) => a.arrivalTime - b.arrivalTime);
 
+  // Refactored loop to avoid function declaration inside it
   processes.forEach((process) => {
     const startTime = currentTime;
     const endTime = startTime + process.burstTime;
@@ -99,6 +100,7 @@ const calculatePriorityScheduling = (processes) => {
 
   processes.sort((a, b) => a.priority - b.priority);
 
+  // Refactored loop to avoid function declaration inside it
   processes.forEach((process) => {
     const startTime = currentTime;
     const endTime = startTime + process.burstTime;
