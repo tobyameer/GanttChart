@@ -12,27 +12,25 @@ import {
   Container,
 } from "@mui/material";
 
-// Helper function to calculate FCFS schedule
+// Function for First-Come, First-Served (FCFS) Scheduling
 const calculateFCFS = (processes) => {
   let currentTime = 0;
-  const schedule = [];
-
-  processes.sort((a, b) => a.arrivalTime - b.arrivalTime);
-
-  // Refactored loop to avoid function declaration inside it
-  processes.forEach((process) => {
+  return processes.map((process) => {
     const startTime = currentTime;
     const endTime = startTime + process.burstTime;
-    schedule.push({ name: process.name, startTime, endTime });
     currentTime = endTime;
+    return {
+      ...process,
+      startTime,
+      endTime,
+      turnaroundTime: endTime - process.arrivalTime,
+      waitingTime: endTime - process.arrivalTime - process.burstTime,
+    };
   });
-
-  return schedule;
 };
 
-// Helper function to calculate SRTF schedule
+// Function for Shortest Remaining Time First (SRTF) Scheduling
 const calculateSRTF = (processes) => {
-  const schedule = [];
   let currentTime = 0;
   let completed = 0;
   const processesCopy = processes.map((p) => ({
@@ -52,13 +50,13 @@ const calculateSRTF = (processes) => {
 
       const startTime = currentTime;
       const endTime = startTime + 1;
-      schedule.push({ name: process.name, startTime, endTime });
-
       process.remainingTime -= 1;
       currentTime += 1;
 
       if (process.remainingTime === 0) {
         process.completed = true;
+        process.turnaroundTime = currentTime - process.arrivalTime;
+        process.waitingTime = process.turnaroundTime - process.burstTime;
         completed += 1;
       }
     } else {
@@ -66,50 +64,88 @@ const calculateSRTF = (processes) => {
     }
   }
 
-  return schedule;
+  return processesCopy;
 };
 
-// Helper function to calculate RR schedule
-const calculateRR = (processes, timeQuantum) => {
-  const schedule = [];
-  const queue = processes.map((p) => ({ ...p }));
+// Function for Priority Scheduling (Non-preemptive) Scheduling
+const calculatePriorityScheduling = (processes) => {
   let currentTime = 0;
+  return processes
+    .sort((a, b) => a.priority - b.priority)
+    .map((process) => {
+      const startTime = currentTime;
+      const endTime = startTime + process.burstTime;
+      currentTime = endTime;
 
+      return {
+        ...process,
+        startTime,
+        endTime,
+        turnaroundTime: endTime - process.arrivalTime,
+        waitingTime: endTime - process.arrivalTime - process.burstTime,
+      };
+    });
+};
+
+// Helper function to calculate Round Robin (RR) schedule
+const calculateRR = (processes, timeQuantum) => {
+  let currentTime = 0;
+  const schedule = [];
+  const queue = processes.map((p) => ({
+    ...p,
+    remainingBurstTime: p.burstTime,
+    startTime: -1, // Placeholder for start time
+  }));
+  const completedProcesses = [];
+
+  // Track the remaining burst time of each process
   while (queue.length > 0) {
     const process = queue.shift();
-    const executionTime = Math.min(process.burstTime, timeQuantum);
-    const startTime = currentTime;
+    const executionTime = Math.min(process.remainingBurstTime, timeQuantum);
+    const startTime =
+      process.startTime === -1 ? currentTime : process.startTime;
     const endTime = startTime + executionTime;
 
-    schedule.push({ name: process.name, startTime, endTime });
-    currentTime += executionTime;
-    process.burstTime -= executionTime;
+    // Update process in the schedule
+    schedule.push({
+      ...process,
+      startTime,
+      endTime,
+    });
 
-    if (process.burstTime > 0) {
+    currentTime = endTime;
+    process.remainingBurstTime -= executionTime;
+
+    // If the process is not completed, it will rejoin the queue
+    if (process.remainingBurstTime > 0) {
+      process.startTime = startTime; // Keep the start time updated
       queue.push(process);
+    } else {
+      // Calculate turnaround and waiting time once process is completed
+      process.turnaroundTime = endTime - process.arrivalTime;
+      process.waitingTime = process.turnaroundTime - process.burstTime;
+      completedProcesses.push(process);
     }
   }
 
-  return schedule;
+  // Calculate averages for waiting and turnaround times
+  const totalTurnaroundTime = completedProcesses.reduce(
+    (sum, process) => sum + process.turnaroundTime,
+    0
+  );
+  const totalWaitingTime = completedProcesses.reduce(
+    (sum, process) => sum + process.waitingTime,
+    0
+  );
+
+  return {
+    processes: completedProcesses,
+    totalTurnaroundTime,
+    totalWaitingTime,
+  };
 };
 
-// Helper function to calculate Priority Scheduling (Non-preemptive)
-const calculatePriorityScheduling = (processes) => {
-  let currentTime = 0;
-  const schedule = [];
-
-  processes.sort((a, b) => a.priority - b.priority);
-
-  // Refactored loop to avoid function declaration inside it
-  processes.forEach((process) => {
-    const startTime = currentTime;
-    const endTime = startTime + process.burstTime;
-    schedule.push({ name: process.name, startTime, endTime });
-    currentTime = endTime;
-  });
-
-  return schedule;
-};
+// Other scheduling algorithms (FCFS, SRTF, Priority) remain unchanged
 
 const App = () => {
   const [numProcesses, setNumProcesses] = useState(0);
@@ -117,6 +153,8 @@ const App = () => {
   const [selectedAlgorithm, setSelectedAlgorithm] = useState("FCFS");
   const [timeQuantum, setTimeQuantum] = useState(4); // Default for RR
   const [schedule, setSchedule] = useState([]);
+  const [avgTurnaroundTime, setAvgTurnaroundTime] = useState(0);
+  const [avgWaitingTime, setAvgWaitingTime] = useState(0);
 
   const handleProcessInput = (e, index) => {
     const { name, value } = e.target;
@@ -129,6 +167,9 @@ const App = () => {
 
   const handleSubmit = () => {
     let calculatedSchedule = [];
+    let totalTurnaroundTime = 0;
+    let totalWaitingTime = 0;
+
     switch (selectedAlgorithm) {
       case "FCFS":
         calculatedSchedule = calculateFCFS(processes);
@@ -137,7 +178,10 @@ const App = () => {
         calculatedSchedule = calculateSRTF(processes);
         break;
       case "RR":
-        calculatedSchedule = calculateRR(processes, timeQuantum);
+        const rrResults = calculateRR(processes, timeQuantum);
+        calculatedSchedule = rrResults.processes;
+        totalTurnaroundTime = rrResults.totalTurnaroundTime;
+        totalWaitingTime = rrResults.totalWaitingTime;
         break;
       case "Priority":
         calculatedSchedule = calculatePriorityScheduling(processes);
@@ -145,6 +189,26 @@ const App = () => {
       default:
         break;
     }
+
+    // Calculate averages if needed
+    if (calculatedSchedule.length > 0) {
+      totalTurnaroundTime =
+        totalTurnaroundTime ||
+        calculatedSchedule.reduce(
+          (sum, process) => sum + process.turnaroundTime,
+          0
+        );
+      totalWaitingTime =
+        totalWaitingTime ||
+        calculatedSchedule.reduce(
+          (sum, process) => sum + process.waitingTime,
+          0
+        );
+
+      setAvgTurnaroundTime(totalTurnaroundTime / calculatedSchedule.length);
+      setAvgWaitingTime(totalWaitingTime / calculatedSchedule.length);
+    }
+
     setSchedule(calculatedSchedule);
   };
 
@@ -249,25 +313,52 @@ const App = () => {
           <Typography variant="h5" gutterBottom>
             Gantt Chart
           </Typography>
-          {schedule.map((entry, idx) => (
-            <Box key={idx} display="inline-block" mr={2}>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              overflowX: "auto",
+              whiteSpace: "nowrap",
+              padding: "8px",
+              backgroundColor: "#f5f5f5",
+              borderRadius: "8px",
+            }}
+          >
+            {schedule.map((entry, idx) => (
               <Box
+                key={idx}
                 sx={{
-                  width: `${entry.endTime - entry.startTime}px`,
-                  height: "40px",
                   backgroundColor: "lightblue",
-                  display: "inline-block",
+                  width: `${(entry.endTime - entry.startTime) * 20}px`,
+                  height: "60px",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  border: "1px solid black",
                   textAlign: "center",
-                  lineHeight: "40px",
+                  flexShrink: 0,
+                  position: "relative",
                 }}
               >
-                {entry.name}
+                <Typography variant="body2" sx={{ fontWeight: "bold" }}>
+                  {entry.name}
+                </Typography>
+                <Typography variant="caption">
+                  AT: {entry.arrivalTime}, BT: {entry.burstTime}
+                </Typography>
               </Box>
-              <Typography variant="caption">
-                {entry.startTime} - {entry.endTime}
-              </Typography>
-            </Box>
-          ))}
+            ))}
+          </Box>
+          <Box mt={2}>
+            <Typography variant="h6">
+              Average Turnaround Time: {avgTurnaroundTime.toFixed(2)}
+            </Typography>
+            <Typography variant="h6">
+              Average Waiting Time: {avgWaitingTime.toFixed(2)}
+            </Typography>
+          </Box>
         </Box>
       )}
     </Container>
